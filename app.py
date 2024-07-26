@@ -6,7 +6,7 @@ import pandas as pd
 import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
-import string
+import requests
 
 app = Flask(__name__)
 CORS(app, resources={r'/predict': {'origins': 'http://127.0.0.1:3000', 'methods': ['POST']}})
@@ -64,16 +64,12 @@ def get_recommendation():
 
     job_titles = recommended_jobs['Job Title'].tolist()
     
-    # Comparison with the provided job list
-    new_corpus = [
-        "Application Developer",
-        "Front end Developer",
-        "Machine Learning Engineer",
-        "Full stack developer",
-        "Software Engineer",
-        "Data Engineer",
-        "Data Analyst"
-    ]
+    # Fetch the new corpus from the external API
+    response = requests.get('http://localhost:3000/api/position')
+    if response.status_code == 200:
+        new_corpus = response.json()
+    else:
+        return jsonify({'error': 'Failed to fetch new corpus from external API'}), 500
     
     new_corpus_processed = [preprocess_text(job) for job in new_corpus]
     new_corpus_processed.append(preprocess_text(", ".join(job_titles)))
