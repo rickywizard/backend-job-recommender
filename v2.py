@@ -9,7 +9,7 @@ from nltk.tokenize import word_tokenize
 import requests
 
 app = Flask(__name__)
-CORS(app, resources={r'/predict': {'origins': 'http://127.0.0.1:3000', 'methods': ['POST']}})
+CORS(app, resources={r'/*': {'origins': '*', 'methods': ['POST']}})
 
 nltk.download('punkt')
 nltk.download('stopwords')
