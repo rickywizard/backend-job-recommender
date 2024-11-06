@@ -2,47 +2,32 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import pandas as pd
+from utils import load_and_process_data, preprocess_text
 import nltk
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
-import requests
 
 app = Flask(__name__)
-CORS(app, resources={r'/predict': {'origins': 'http://127.0.0.1:3000', 'methods': ['POST']}})
+CORS(app, resources={r'/*': {'origins': '*', 'methods': ['POST']}})
 
 nltk.download('punkt')
 nltk.download('stopwords')
 
-def preprocess_text(text):
-    stop_words = set(stopwords.words('english'))
-    words = word_tokenize(text)
-    words = [word.lower() for word in words if word.isalnum()]
-    words = [word for word in words if word not in stop_words]
-    return ' '.join(words)
-
-def load_and_process_data(filepath):
-    jobs_df = pd.read_csv(filepath)
-    jobs_df['Description'] = jobs_df['Description'].fillna('')
-    jobs_df['Description'] = jobs_df['Description'].apply(preprocess_text)
-    return jobs_df
-
-jobs_df = load_and_process_data("./JobsDataset.csv")
+jobs_df = load_and_process_data('./dataset/AllJobCSV.csv')
 
 @app.route('/', methods=['GET'])
 def home():
-    return "Jobs dataset is loaded and processed."
+    return 'Jobs dataset is loaded and processed.'
 
 @app.route('/get-recommendation', methods=['POST'])
 def get_recommendation():
     data = request.get_json()
-    skills = data.get('skills', '')
-    comparison_jobs = data.get('comparisonJobs', [])
+    skills = data.get('skills', [])
+    projects = data.get('projectDesc', [])
+    experiences = data.get('experiences', [])
     
-    input_text = f"{skills}"
+    input_text = ' '.join(skills + projects + experiences)
     input_text = preprocess_text(input_text)
     
-    corpus = jobs_df['Description'].tolist()
+    corpus = jobs_df['Combined'].tolist()
     corpus.append(input_text)
     
     vectorizer = TfidfVectorizer(
@@ -59,29 +44,27 @@ def get_recommendation():
     
     cosine_sim = cosine_similarity(tfidf_matrix[-1], tfidf_matrix[:-1])
     
-    jobs_df['Similarity'] = cosine_sim[0]
-    recommended_jobs = jobs_df.sort_values(by='Similarity', ascending=False).head(10)
-
-    job_titles = recommended_jobs['Job Title'].tolist()
+    # Get the top 5 unique recommendations
+    sim_scores = list(enumerate(cosine_sim[0]))
+    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
     
-    # Fetch the new corpus from the external API
-    response = requests.get('http://localhost:3000/api/position')
-    if response.status_code == 200:
-        new_corpus = response.json()
-    else:
-        return jsonify({'error': 'Failed to fetch new corpus from external API'}), 500
+    seen_descriptions = set()
+    top_jobs = []
     
-    new_corpus_processed = [preprocess_text(job) for job in new_corpus]
-    new_corpus_processed.append(preprocess_text(", ".join(job_titles)))
+    for i, _ in sim_scores:
+        job_description = jobs_df.iloc[i]['Combined']
+        if job_description not in seen_descriptions:
+            top_jobs.append(i)
+            seen_descriptions.add(job_description)
+        if len(top_jobs) >= 5:
+            break
     
-    tfidf_matrix_new = vectorizer.fit_transform(new_corpus_processed)
-    cosine_sim_new = cosine_similarity(tfidf_matrix_new[-1], tfidf_matrix_new[:-1])
+    recommended_jobs = jobs_df.iloc[top_jobs][['Company', 'Position']]
     
-    similarity_scores = list(zip(new_corpus, cosine_sim_new[0]))
-    similarity_scores = sorted(similarity_scores, key=lambda x: x[1], reverse=True)
-    top_3_jobs = [job for job, score in similarity_scores[:3]]
+    # Convert to dictionary
+    top_jobs_dict = recommended_jobs.to_dict(orient='records')
     
-    return jsonify(top_3_jobs)
+    return jsonify(top_jobs_dict)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True , host='0.0.0.0', port=5000)
