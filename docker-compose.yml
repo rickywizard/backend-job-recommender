@@ -1,0 +1,15 @@
+version: "3.8"
+services:
+  app:
+    image: job-fit-cv-recommender
+    build: ./
+    container_name: job-fit-cv-recommender
+    ports:
+      - "5000:5000"
+    restart: on-failure
+    networks:
+      - shared-network
+  
+networks:
+  shared-network:
+    external: true
